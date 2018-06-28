@@ -93,9 +93,60 @@ register_shutdown_function(function(){
 
 	if ( $f3->get("settings.plugins_dir") ) $f3->set('AUTOLOAD', $f3->get("ROOT").$f3->get("settings.plugins_dir"));
 
+	/* Build a Site Map. Primarily used in Navigational components. */
+	$query = $dbh->prepare("SELECT `virtual_path`, `pid`, `id`, `protected`, `navPlacement`, `weight`, `page_title`, `nav_title` FROM `content` WHERE 1");
+	$query->execute();
+	$resources = $query->fetchAll(PDO::FETCH_OBJ);
+	foreach($resources as $resource) {
+		if (substr($resource->virtual_path, -1) == '*') { $resource->virtual_path = str_replace("*", "index.html", $resource->virtual_path); }
+		if ( $f3->get("vpath")  == $resource->virtual_path ) { $resource->isVisiting = true; }
+		if ( $resource->pid == $resource->virtual_path ) { $row['isParent'] = true; }
+		$ids[$resource->virtual_path] = $resource->id;
+		$idsByWeight[$resource->virtual_path] = $resource->weight;
+	}
+
+	$pathsByWeight = array_flip($idsByWeight);
+	foreach($pathsByWeight as $k =>$v) {
+		$pathsByWeight[$k] = implode(", ", array_keys($idsByWeight, $k));
+	}
+	ksort($pathsByWeight);
+	$pathsByWeight = array_flip($pathsByWeight);
+	foreach($resources as $resource) {
+		$resource->parentId = (ctype_digit($ids[$resource->pid])==true)
+			? $ids[$resource->pid]
+			: $ids[$resource->virtual_path];
+		$final[] = (array) $resource;
+	}
+
+	foreach($final as $k=>$v) { $final[$v['virtual_path']] = $v; }
+	foreach($idsByWeight as $path=>$item) { $pathsByWeight[$path] = $final[$path]; }
+	$indexed = array();
+	foreach ($pathsByWeight as $item) {	$indexed[$item['id']] = $item; }
+
+	foreach ($indexed as $id => &$item) {
+		$indexed[$item['parentId']]['children'][$id] = &$item;
+		unset($item['id']);
+		unset($item['parentId']);
+		unset($item['pid']);
+		unset($item['weight']);
+		if ( isset($indexed[$id]['children']) ) {
+			if ( strlen($item['navPlacement']) > 0 ) {
+				$rootedMenuItems[] = $item['children'];
+			}
+			unset($indexed[$id]['children']);
+		}
+	}
+	unset($indexed);
+	foreach($rootedMenuItems as $k=>$v) {
+		$first = key($v);
+		unset($first['id']);
+		$sitemap[] = $v[$first];	
+	}
+
+	$f3->set("SITEMAP", $sitemap);	
+	
 	/* In Commnetivity, we used a priority setting and extra logic. Now that we have a combined table, we use the OR and the order of what's checked as our method.
-		In thise case, vpath will alayws get selected virst.
-	*/
+		In thise case, vpath will alayws get selected virst. */
 	$query = $dbh->prepare('SELECT * FROM content WHERE virtual_path = "'.$f3->get("vpath").'" OR virtual_path = "'.dirname($f3->get("vpath"))."/*".'" LIMIT 1');
 
 	$query->execute();
