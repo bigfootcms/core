@@ -1,0 +1,29 @@
+{
+    "name": "bigfootcms/core",
+    "description": "MySQL Router Plugin for Fat Free Framework",
+	"homepage": "https://bigfootcms.com/",
+    "type": "f3-plugin",
+    "require": {
+		"php": ">=7.0.2",
+        "bcosca/fatfree-core": "^3.6",
+        "commnetivity/purehtml": "^1.0.0",
+        "mobiledetect/mobiledetectlib": "^2.8.32",
+        "bainternet/php-hooks": "^1.0.0"
+    },
+    "license": "AGPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Nicholas Maietta",
+            "email": "nick@commnetivity.com",
+			"homepage": "http://icode4u.com",
+			"role": "Developer"			
+        }
+    ],
+    "minimum-stability": "dev",
+	"autoload": {
+		"files": ["src/index.php"]
+	},
+	"config": {
+		"vendor-dir": "vendor/"
+	}
+}
