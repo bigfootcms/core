@@ -1,269 +1,318 @@
 <?php
 
-$f3 = Base::instance();
+/**
+ * Bigfoot class
+ *
+ * @author Nicholas Maietta
+ */
+class Bigfoot extends Prefab {
 
-$f3->set("HOOKS", new Hooks());
-$f3->get("HOOKS")->do_action("genesis");
-
-function RegisterPlugin($params) {
-	global $f3;
-	if ( !$f3->get("SESSION.PLUGIN") ) {
-		$f3->set("SESSION.PLUGIN", \Delight\Auth\Auth::createUuid());
-	}
-	$backtrace = debug_backtrace();
-	$parts = explode("/", $backtrace[0]['file']);
-	$name = array_pop(array_diff(explode("/", $backtrace[0]['file']), explode("/", __FILE__)));
-	$key = array_search($name, $parts);
-	$namespace = $parts[$key-1];
-	$details =(object) $f3->get("plugins")[$namespace][$name];
+	private static $instance;
+	private $dbh;
+	private static $auth;
 	
-	$details = (object) array_merge((array) $details, (array) $params);
-	if ( isset($details->path) ) {
-		$f3->set("MAGIC_PATH_REAL", $details->path);
+	public $content;
+	public $inner_content;
+	
+	public $prepared;
+	public $security;
+	public $meta;
+	public $theme;
+	public $script;
+	public $internal;
+	public $status;
+	public $content_area;
+	public $permission;
+	public $html;
+	
+	private function __construct() {
+		//$hooks = Base::instance()->get("HOOKS");
 	}
-	$f3->set("PLUGIN", $details);
-	$f3->set("MAGIC_PATH", '/'.$f3->get("SESSION.PLUGIN"));
-	return $details;
-}
 
-function MagicAssets() {
-	global $f3;
-	if ( !$f3->get("MAGIC_PATH_REAL") ) {
-		return;
-	}
-	$plugin= $f3->get("PLUGIN");
-	if ( $plugin->enabled != true ) {
-		return;
-	}
-
-	/* MAGIC PATH. Just include {{@MAGIC_PATH}}/js/code.js in your HTML templates and you are good to go. */
-	if ( substr($f3->get("vpath"), 0, strlen($f3->get("MAGIC_PATH"))) == $f3->get("MAGIC_PATH") ) {
-		foreach([
-			  str_replace($f3->get("MAGIC_PATH"), $f3->get("ROOT").'/'.rtrim($plugin->pages, "/"),$f3->get("vpath"))
-			, str_replace($f3->get("MAGIC_PATH"), $f3->get("MAGIC_PATH_REAL"), $f3->get("vpath"))
-		] as $possibility) {
-			if ( file_exists($possibility) ) {
-				$file = $possibility;
-				continue;
-			}
+	public static function CMS($config=NULL) {
+		base::instance()->set("vpath", ((substr(base::instance()->get("PATH"),-1)=='/')?substr(base::instance()->get("PATH"),0,-1).'/':base::instance()->get("PATH")));
+		base::instance()->set("sitelevel", ('/'. substr(substr(base::instance()->get("vpath"),1), 0, strpos(substr(base::instance()->get("vpath"),1), '/'))));
+		base::instance()->set("directory", dirname(base::instance()->get("vpath")));
+		if ( base::instance()->get("settings.plugins_dir") ) {
+			base::instance()->set('AUTOLOAD', base::instance()->get("ROOT").base::instance()->get("settings.plugins_dir"));
+		}		
+		if ( is_null( self::$instance ) ) {
+			self::$instance = new self();
+			base::instance()->set("HOOKS", new Hooks());
 		}
-		if ( !isset($file) ) {
-			$f3->error(403);
-		} else {
-			if ( substr(strrev($f3->get("vpath")), 0, 4) == "ssc.") {
-				header("Content-type: text/css", true);
-			}
-			if ( substr(strrev($f3->get("vpath")), 0, 3) == "sj.") {
-				header("Content-type: application/javascript", true);
-			}
-			echo Template::instance()->resolve(file_get_contents($file));
-			exit;
+		if ( $config !== NULL && file_exists($config) ) {
+			base::instance()->config($config);
+		}
+		self::$instance->connect();
+		base::instance()->get("HOOKS")->do_action('CMS');
+		return self::$instance;
+	}
+	
+	public function connect() {
+		try {
+			$this->dbh = new DB\SQL(
+				Base::instance()->get('WebsiteDB.dsn'), Base::instance()->get('WebsiteDB.user'), Base::instance()->get('WebsiteDB.pass')
+				, array( PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_PERSISTENT=>false, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_OBJ)
+			);
+			Base::instance()->set("dbh", $this->dbh);
+		} catch (PDOException $e) {
+			die('Connection failed: ' . $e->getMessage());
 		}
 	}
-}
 
-/* CONTENT PARSER */
-register_shutdown_function(function(){
-	global $f3;
-	global $dbh;
-	
-	try {
-		$dbh = new DB\SQL($f3->get('MySQL.dsn'), $f3->get('MySQL.user'), $f3->get('MySQL.pass'), array(PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_PERSISTENT=>false));
-	} catch (PDOException $e) {
-		trigger_error('Connection failed: ' . $e->getMessage());
-	}
+	public function run() {
+		Base::instance()->set('ONERROR', function(){ return false; });
+		Base::instance()->set('DEBUG', true);
+		Base::instance()->set('CACHE', false);
+		Base::instance()->set("QUIET", false);
+		
+		/* Change these based on config */
+		Base::instance()->get("HOOKS")->do_action('run');
+		Base::instance()->get("HOOKS")->do_action('pre_config');
 
-	$f3->set("vpath", ((substr($f3->get("PATH"),-1)=='/')?substr($f3->get("PATH"),0,-1).'/':$f3->get("PATH")));
-	$f3->set("sitelevel", ('/'. substr(substr($f3->get("vpath"),1), 0, strpos(substr($f3->get("vpath"),1), '/'))));
+		$this->connect();
+		Base::instance()->get("HOOKS")->do_action('db_connect');
 
-	$f3->set("directory", dirname($f3->get("vpath")));
-	$f3->set('ONERROR', function(){return true;});
-	$f3->set('DEBUG', false);
-	$f3->set('CACHE', false);
-	if ( $f3->get("PATH") == $f3->get("vpath") && stripos(strrev($f3->get("PATH")), 'lmth.xedni') === 0 ) {
-		header("Location: ".str_replace("index.html", "", $f3->get("vpath")));
-	}
-	
-	$f3->get("HOOKS")->do_action("pre_dbh");
-
-	$detect = new Mobile_Detect;
-	$f3->set("deviceType", ( $detect->isMobile() ? ( $detect->isTablet() ? 'tablet' : 'phone' ) : 'desktop' ));
-
-	$f3->get("HOOKS")->do_action("post_dbh");
-
-	if ( $f3->get("settings.plugins_dir") ) $f3->set('AUTOLOAD', $f3->get("ROOT").$f3->get("settings.plugins_dir"));
-
-	/* In Commnetivity, we used a priority setting and extra logic. Now that we have a combined table, we use the OR and the order of what's checked as our method.
-		In thise case, vpath will alayws get selected virst.
-	*/
-	$query = $dbh->prepare('SELECT * FROM content WHERE virtual_path = "'.$f3->get("vpath").'" OR virtual_path = "'.dirname($f3->get("vpath"))."/*".'" LIMIT 1');
-
-	$query->execute();
-	$content = $query->fetchAll(PDO::FETCH_OBJ)[0];
-	$security = ( isset($content->security) )  ? json_decode($content->security)  : array();
-	$meta     = ( isset($content->meta_data) ) ? json_decode($content->meta_data) : array();
-	$theme    = ( isset($content->theme) )     ? json_decode($content->theme)     : array();
-
-	$f3->set("CONTENT", $content);
-
-	$template = ( !isset($theme->template) ) ? "default.html" : $theme->template;
-	
-	$prepared = (object) array();
-	if ( $content->internal_path ) {
-		if (file_exists($f3->get('ROOT').$content->internal_path)) {
-			$prepared->script = $f3->get('ROOT').$content->internal_path;
+		if ( Base::instance()->get("PATH") == Base::instance()->get("vpath") && stripos(strrev(Base::instance()->get("PATH")), 'lmth.xedni') === 0 ) {
+			header("Location: ".str_replace("index.html", "", Base::instance()->get("vpath")));
 		}
-	} elseif ( $content->virtual_path ) {	
-		if ( $content->virtual_path ) {
-			if ( $content->content ) {
-				$prepared->content = stripcslashes(htmlspecialchars_decode($content->content));
+		
+		$this->detect_device();
+
+		Base::instance()->get("HOOKS")->do_action("custom");
+
+		$this->get_content();
+		
+	//	include("/home/demorealty/public_html/plugins/session-management.php");
+		
+		$this->security = ( isset($this->content->security) )  ? json_decode($this->content->security)  : array();
+		$this->meta     = ( isset($this->content->meta_data) ) ? json_decode($this->content->meta_data) : array();
+		$this->theme    = ( isset($this->content->theme) )     ? json_decode($this->content->theme)     : array();
+
+		$this->template = ( !isset($this->theme->template) ) ? "default.html" : $this->theme->template;
+
+		$this->prepared = (object) array("status"=>200, "page_title"=>"Error 404 - Page Not Found");
+		
+		if ( isset($this->content->page_title) ) {
+			$this->prepared->page_title = $this->content->page_title;
+		}
+		
+		
+		if (  !empty($this->content->internal_path) ) {
+			if (file_exists(Base::instance()->get('ROOT').$this->content->internal_path)) {
+				$this->prepared->script = Base::instance()->get('ROOT').$this->content->internal_path;
+			}
+		} elseif ( isset($this->content->virtual_path) ) {
+			if ( isset($this->content->virtual_path) ) {
+				if ( isset($this->content->content) ) {
+					$this->prepared->content = stripcslashes(htmlspecialchars_decode($this->content->content));
+				} else {
+					if ( substr($this->content->virtual_path, -1) == '/' && Base::instance()->get("vpath") != "/" ) {
+						if (file_exists(Base::instance()->get('ROOT').$this->content->virtual_path.'index.php')) {
+							$this->prepared->script = Base::instance()->get('ROOT').$this->content->virtual_path.'index.php';
+						}
+					}
+				}
 			} else {
-				if (substr($content->virtual_path, -1) == '/' && $f3->get("vpath") != "/" ) {
-					if (file_exists($f3->get('ROOT').$content->virtual_path.'index.php')) {
-						$prepared->script = $f3->get('ROOT').$content->virtual_path.'index.php';
-					}
+				if ( isset($this->content->content) && strlen($this->content->content) > 0 ) {
+					$this->prepared->content = $this->content->content;
+					echo "asdf";
+				} else {
+					echo "Error: No script available to handle this page.";
 				}
 			}
+		}
+
+		if ( isset($this->prepared->internal) ) {
+			$this->prepared->response = $this->prepared->internal;
+		} elseif ( isset($this->prepared->content) || isset($this->prepared->script) ) {
+			if ( isset($this->prepared->script) && file_exists($this->prepared->script)) {
+				ob_start();
+				include($this->prepared->script);
+				$this->prepared->content = ob_get_clean();
+			}
 		} else {
-			if ( isset($content->content) && strlen($content->content) > 0 ) {
-				$prepared->content = $content->content;
+			$this->prepared->status = 404;
+			if ( !isset($this->permissions->cms) ) {
+				$this->prepared->response  = "<h4>404 Not Found</h4>\n";
+				$this->prepared->response .= "<p>The requested resource could not be found but may be available again in the future.</p>";
+			} else {
+				$this->prepared->response  = "<h4>Ready for content</h4>\n";
+				$this->prepared->response .= "<p>Until static or dynamic content is assigned to this VirtualPath or SiteLevel, the public will see a general Error 404 response.</p>";
 			}
 		}
-	}
-
-	if ( isset($prepared->internal) ) {
-		$prepared->status = 200;
-		$prepared->response = $prepared->internal;
-	} elseif ( isset($prepared->content) || isset($prepared->script) ) {
-		if ( isset($prepared->script) && file_exists($prepared->script)) {
-			$prepared->status = 200;
+		
+		$this->inner_content = ( $this->prepared->status == 200 ) ? $this->prepared->content : $this->prepared->response;
+		
+		if ( in_array(Base::instance()->get("vpath"), array_keys(Base::instance()->get("ROUTES")) )) {
+			Base::instance()->set("QUIET", false);
 			ob_start();
-			include($prepared->script);
-			$content_area = ob_get_clean();
-			$prepared->content = $content_area;
+			Base::instance()->run();
+			ob_get_clean();
+			
+			if ( Base::instance()->get("RESPONSE") ) {
+				$this->prepared->status = 200;
+				$this->inner_content = Base::instance()->get("RESPONSE");
+			}
+			if ( Base::instance()->get("page_title") ) {
+				$this->prepared->page_title = Base::instance()->get("page_title");
+			}	
+		}
+
+		if (  !empty(Base::instance()->get("page_title")) ) {
+			 $this->prepared->page_title =Base::instance()->get("page_title");
+		}
+		$this->select_template();
+		$this->process_template();
+	}
+	
+	public function set_content($content) {
+		Base::instance()->set("content", $content);
+	}
+	
+	public function db() {
+		return $this->dbh;
+	}	
+
+	private function detect_device() {
+		$detect = new Mobile_Detect;
+		Base::instance()->set("deviceType", ( $detect->isMobile() ? ( $detect->isTablet() ? 'tablet' : 'phone' ) : 'desktop' ));
+	}
+	
+	private function get_content() {
+		$vpathParts = explode("/", Base::instance()->get("vpath"));
+		$count = count($vpathParts);
+		$path = Base::instance()->get("vpath");
+		$query = $this->dbh->prepare('SELECT * FROM content WHERE virtual_path = "'.Base::instance()->get("vpath").'" LIMIT 1');
+		$query->execute();
+		$sql = "";
+		if ( $query->rowCount() == 0 ) {
+			for ($i = $count; $i >= 1; $i--) {
+				if ( dirname(Base::instance()->get("vpath")) == "/" ) { continue; }
+				if ( dirname($path) != "/" ) {
+					$sql = 'WHERE virtual_path = "'.dirname($path).'/ " ';
+				}
+				$path = dirname($path);
+				$query = $this->dbh->prepare('SELECT * FROM content '.$sql.' LIMIT 1');
+				$query->execute();		
+				if ( $query->rowCount() == 1 ) {
+					$this->content = $query->fetchAll()[0];
+					break;
+				}
+			}
 		} else {
-			$prepared->status = 200;
-		}
-	} else {
-		if ( !is_array($permissions->cms) ) {
-			$prepared->status = 404;
-			$prepared->response  = "<h4>404 Not Found</h4>\n";
-			$prepared->response .= "<p>The requested resource could not be found but may be available again in the future.</p>";
-		} else {
-			$prepared->status = 404;
-			$prepared->response  = "<h4>Ready for content</h4>\n";
-			$prepared->response .= "<p>Until static or dynamic content is assigned to this VirtualPath or SiteLevel, the public will see a general Error 404 response.</p>";
-		}
-	}
-
-	$inner_content = ( $prepared->status == 200 ) ? $prepared->content : $prepared->response;
-
-	$f3->get("HOOKS")->do_action('add_route');
-
-	if ( in_array($f3->get("vpath"), array_keys($f3->get("ROUTES")) )) {
-		ob_start(); $f3->run(); $inner_content = ob_get_clean();
-		$prepared->status = 200;
-		if ( $f3->get("page_title") ) {
-			$prepared->page_title = $f3->get("page_title");
+			$this->content = $query->fetchAll()[0];
 		}
 	}
 	
-	$f3->get("HOOKS")->do_action('after_route');
-	
-	$ext = pathinfo(basename($template), PATHINFO_EXTENSION);
-	$basename = basename($template, '.'.$ext);
-	$possibilities = array_unique(array(
-		  $f3->get('ROOT') . "/Templates/" . $basename . '/' . $f3->get("deviceType") . '.' . $ext
-		, $f3->get('ROOT') . "/Templates/" . $basename . '.' . $f3->get("deviceType") . '.' . $ext
-		, $f3->get('ROOT') . "/Templates/" . $basename . '.' . $ext
-		, $f3->get('ROOT') . "/Templates/default/".$f3->get("deviceType").".html"
-		, $f3->get('ROOT') . "/Templates/default.".$f3->get("deviceType").".html"
-		, $f3->get('ROOT') . "/Templates/default.html"
-	));
-	foreach($possibilities as $check) {
-		if ( file_exists($check) ) {
-			$template = Template::instance()->resolve(file_get_contents($check));
-			break;
+	public function select_template() {
+		$ext = pathinfo(basename($this->template), PATHINFO_EXTENSION);
+		$possibilities = array_unique(array(
+			  Base::instance()->get('ROOT') . "/Templates/" . basename($this->template, '.'.$ext) . '/' . Base::instance()->get("deviceType") . '.' . $ext
+			, Base::instance()->get('ROOT') . "/Templates/" . basename($this->template, '.'.$ext) . '.' . Base::instance()->get("deviceType") . '.' . $ext
+			, Base::instance()->get('ROOT') . "/Templates/" . basename($this->template, '.'.$ext) . '.' . $ext
+			, Base::instance()->get('ROOT') . "/Templates/default/".Base::instance()->get("deviceType").".html"
+			, Base::instance()->get('ROOT') . "/Templates/default.".Base::instance()->get("deviceType").".html"
+			, Base::instance()->get('ROOT') . "/Templates/default.html"
+		));
+
+		$nothing_so_far = true;
+		foreach($possibilities as $check) {
+			if ( file_exists($check) ) {
+				$this->template = Template::instance()->resolve(file_get_contents($check));
+				unset($nothing_so_far);
+				break;
+			}
 		}
+		
+		if ( isset($nothing_so_far) ) {
+			$possibilities = str_replace(Base::instance()->get('ROOT'), __DIR__, $possibilities);
+			foreach($possibilities as $check) {
+				if ( file_exists($check) ) {
+					$this->template = Template::instance()->resolve(file_get_contents($check));
+					unset($nothing_so_far);
+					break;
+				}
+			}
+		}
+
+		if ( isset($nothing_so_far) ) {
+			 die("No templates found in /Templates/ or ".str_replace($f3->get('ROOT'), '', __DIR__)."/Templates/.");
+		}
+		
 	}
 	
-	$html = new PureHTML();
-	$f3->get("HOOKS")->do_action("pre_content");
+	public function process_template() {
+		
+		$html = new PureHTML();
+		$html->scan($this->template, "head");
+		$this->template = $html->scrub($this->template);
+		
+		// Dynamics are standalone PHP files that do not require the use of the F3 system
+		if ( strlen($this->inner_content) > 0 ) {
+			$domOfDynamic = new DOMDocument();
+			$domOfDynamic->loadHTML($this->inner_content);
+			$frag = $domOfDynamic->saveHTML();
+			$html->scan($frag);
+			$scrubbed_dynamic = $html->scrub($frag);
+			$this->template = $html->splice($this->template, $scrubbed_dynamic, "content");
+		}
 
-	$html->scan($template, "head");  // Every call to scan() will build up the $html object. use head, body or leave empty for both
-	$template = $html->scrub($template);
-
-	// Dynamics are standalone PHP files that do not require the use of the F3 system
-	if ( strlen($inner_content) > 0 ) {
-		$domOfDynamic = new DOMDocument();
-		$domOfDynamic->loadHTML($inner_content);
-		$frag = $domOfDynamic->saveHTML();
-		$html->scan($frag);
-		$scrubbed_dynamic = $html->scrub($frag);
-		$template = $html->splice($template, $scrubbed_dynamic, "content");
-	}
-
-	$dynamics_depth = 5;
-	$already_processed = array();
-	$already_processed[] = "content";
-	for($i=0; $i<=($dynamics_depth-1); $i++) {
-		libxml_use_internal_errors(true);
-		$tmpDOM = new DOMDocument();
-		$tmpDOM->loadHTML(html_entity_decode($template, ENT_HTML5));
-		foreach($tmpDOM->getElementsByTagName('*') as $tag) {
-			if ( !in_array($tag->getAttribute("id"), $already_processed) ) {
-				$already_processed[] = $tag->getAttribute("id");
-				$typeOfDynamic = ( file_exists($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".php" ) )
-					? ( ( file_exists($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".html" ) )
-					? "html" : "php") : false;
-				if ( $typeOfDynamic !== false && ( $typeOfDynamic == "html" || $typeOfDynamic == "php" ) ) {
-					ob_start();
-					include($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".php");
-					$dynamic_output = ob_get_clean();
-					if ( $typeOfDynamic == "html" ) {						
-						$unscrubbed_dynamic_content = trim(htmlspecialchars(Template::instance()->render('/dynamics/'.$tag->getAttribute("id").'.html'), ENT_XML1));
-						if ( strlen($unscrubbed_dynamic_content) > 0 ) {
-							$html->scan($unscrubbed_dynamic_content);
-							$scrubbed_dynamic = $html->scrub($unscrubbed_dynamic_content);
-							$template = $html->splice($template, $scrubbed_dynamic, $tag->getAttribute("id"));
+		$dynamics_depth = 5;
+		$already_processed = array();
+		$already_processed[] = "content";
+		for($i=0; $i<=($dynamics_depth-1); $i++) {
+			libxml_use_internal_errors(true);
+			$tmpDOM = new DOMDocument();
+			$tmpDOM->loadHTML(html_entity_decode($this->template, ENT_HTML5));
+			foreach($tmpDOM->getElementsByTagName('*') as $tag) {
+				if ( !in_array($tag->getAttribute("id"), $already_processed) ) {
+					$already_processed[] = $tag->getAttribute("id");
+					$typeOfDynamic = ( file_exists($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".php" ) )
+						? ( ( file_exists($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".html" ) )
+						? "html" : "php") : false;
+					if ( $typeOfDynamic !== false && ( $typeOfDynamic == "html" || $typeOfDynamic == "php" ) ) {
+						ob_start();
+						include($_SERVER['DOCUMENT_ROOT']."/dynamics/".$tag->getAttribute("id").".php");
+						$dynamic_output = ob_get_clean();
+						if ( $typeOfDynamic == "html" ) {						
+							$unscrubbed_dynamic_content = trim((Template::instance()->render('/dynamics/'.$tag->getAttribute("id").'.html')));
+							if ( strlen($unscrubbed_dynamic_content) > 0 ) {
+								$html->scan($unscrubbed_dynamic_content);
+								$scrubbed_dynamic = $html->scrub($unscrubbed_dynamic_content);
+								$this->template = $html->splice($this->template, $scrubbed_dynamic, $tag->getAttribute("id"));
+							}
 						}
-					}
-					if ( $typeOfDynamic !== false && $typeOfDynamic == "php" ) {
-						$domOfDynamic = new DOMDocument();
-						if ( strlen($dynamic_output) > 0 ) {
-							$domOfDynamic->loadHTML($dynamic_output);
-							$frag = $domOfDynamic->saveHTML();
-							$html->scan($frag);
-							$scrubbed_dynamic = $html->scrub($frag);
-							$template = $html->splice($template, $scrubbed_dynamic, $tag->getAttribute("id"));
+						if ( $typeOfDynamic !== false && $typeOfDynamic == "php" ) {
+							$domOfDynamic = new DOMDocument();
+							if ( strlen($dynamic_output) > 0 ) {
+								$domOfDynamic->loadHTML($dynamic_output);
+								$frag = $domOfDynamic->saveHTML();
+								$html->scan($frag);
+								$scrubbed_dynamic = $html->scrub($frag);
+								$this->template = $html->splice($this->template, $scrubbed_dynamic, $tag->getAttribute("id"));
+							}
 						}
 					}
 				}
-			}
-		}	
+			}	
+		}
+
+		$html->scan($this->template, "body");
+
+		$doc = $html->rebuild($this->template);
+		
+		$html->title($doc, ( isset($this->prepared->page_title) ? html_entity_decode($this->prepared->page_title) : html_entity_decode($this->content->page_title)));
+
+	//	if ( headers_sent() ) { return; }
+		
+		$this->html = $html->beautifyDOM($doc);
 	}
 	
-	$f3->get("HOOKS")->do_action("end_of_body");
+	public function __destruct() {
+		echo $this->html;
+	}
+	
+}
 
-	$html->scan($template, "body");
-	$doc = $html->rebuild($template);
-	$html->title($doc, ( isset($prepared->page_title) ? html_entity_decode($prepared->page_title) : html_entity_decode($content->page_title)));
-
-	$f3->get("HOOKS")->do_action('page_title');
-	
-	/* Provide a consistent set of objects relating to user profile, permissions and preferences */
-	//$profile     = ( isset($_SESSION['username']) ) ? $session->profile($_SESSION['username']) : 0;
-
-	//profile = 0;
-	//$permissions = ( isset($profile->permissions) ) ? json_decode($profile->permissions) : array();
-	//$preferences = ( isset($profile->preferences) ) ? json_decode($profile->preferences) : array();
-	
-	//$f3->get("HOOKS")->do_action('Revelation');
-	
-	// require("Menus.php");
-	// require('Auth.php');
-	// require('Maietta/init.php');
-	// require('CMS.php');
-	
-	echo $html->beautifyDOM($doc);
-});
+?>
