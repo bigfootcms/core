@@ -38,7 +38,14 @@ class Bigfoot extends Prefab {
 		}		
 		if ( is_null( self::$instance ) ) {
 			self::$instance = new self();
-			base::instance()->set("HOOKS", new Hooks());
+			//base::instance()->set("HOOKS", new Hooks());
+			
+			if ( !Base::instance()->get("HOOKS") ) {
+				Base::instance()->set("HOOKS", new Hooks());
+				echo "Instansiated.";
+				exit;
+			}
+			
 		}
 		if ( $config !== NULL && file_exists($config) ) {
 			base::instance()->config($config);
@@ -89,6 +96,8 @@ class Bigfoot extends Prefab {
 		$this->meta     = ( isset($this->content->meta_data) ) ? json_decode($this->content->meta_data) : array();
 		$this->theme    = ( isset($this->content->theme) )     ? json_decode($this->content->theme)     : array();
 
+		
+		
 		$this->template = ( !isset($this->theme->template) ) ? "default.html" : $this->theme->template;
 
 		$this->prepared = (object) array("status"=>200, "page_title"=>"Error 404 - Page Not Found");
@@ -97,6 +106,7 @@ class Bigfoot extends Prefab {
 			$this->prepared->page_title = $this->content->page_title;
 		}
 		
+		Base::instance()->get("HOOKS")->do_action('security');
 		
 		if (  !empty($this->content->internal_path) ) {
 			if (file_exists(Base::instance()->get('ROOT').$this->content->internal_path)) {
@@ -203,6 +213,13 @@ class Bigfoot extends Prefab {
 		} else {
 			$this->content = $query->fetchAll()[0];
 		}
+	}
+	
+	public function isContentProtected() {
+		if ( $this->content->protected == "Y" ) {
+			return true;
+		}
+		return false;
 	}
 	
 	public function select_template() {
