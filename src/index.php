@@ -314,15 +314,18 @@ class Bigfoot extends Prefab {
 				}
 			}	
 		}
-		
-		base::instance()->get("HOOKS")->do_action('end_of_dom', $html);
+
 		$html->scan($this->template, "body");
+
 		$doc = $html->rebuild($this->template);
+		
 		$html->title($doc, ( isset($this->prepared->page_title) ? html_entity_decode($this->prepared->page_title) : html_entity_decode($this->content->page_title)));
-		Base::instance()->get("HOOKS")->do_action('page_title');
+
+	//	if ( headers_sent() ) { return; }
+		
 		$this->html = $html->beautifyDOM($doc);
 	}
-
+	
 	public function __destruct() {
 		echo $this->html;
 	}
