@@ -89,17 +89,12 @@ class Bigfoot extends Prefab {
 		Base::instance()->get("HOOKS")->do_action("custom");
 
 		$this->get_content();
-		
-	//	include("/home/demorealty/public_html/plugins/session-management.php");
-		
+				
 		$this->security = ( isset($this->content->security) )  ? json_decode($this->content->security)  : array();
 		$this->meta     = ( isset($this->content->meta_data) ) ? json_decode($this->content->meta_data) : array();
 		$this->theme    = ( isset($this->content->theme) )     ? json_decode($this->content->theme)     : array();
 
-		
-		
 		$this->template = ( !isset($this->theme->template) ) ? "default.html" : $this->theme->template;
-
 		$this->prepared = (object) array("status"=>200, "page_title"=>"Error 404 - Page Not Found");
 		
 		if ( isset($this->content->page_title) ) {
@@ -221,6 +216,14 @@ class Bigfoot extends Prefab {
 		}
 		return false;
 	}
+
+	public function inMaintenanceMode() {
+		$triggerFile = Base::instance()->get('ROOT') . "/maintenance.txt";
+		if ( file_exists($triggerFile) ) {
+			return file_get_contents($triggerFile);
+		}
+		return false;
+	}	
 	
 	public function select_template() {
 		$ext = pathinfo(basename($this->template), PATHINFO_EXTENSION);
@@ -314,18 +317,15 @@ class Bigfoot extends Prefab {
 				}
 			}	
 		}
-
+		
+		base::instance()->get("HOOKS")->do_action('end_of_dom', $html);
 		$html->scan($this->template, "body");
-
 		$doc = $html->rebuild($this->template);
-		
 		$html->title($doc, ( isset($this->prepared->page_title) ? html_entity_decode($this->prepared->page_title) : html_entity_decode($this->content->page_title)));
-
-	//	if ( headers_sent() ) { return; }
-		
+		Base::instance()->get("HOOKS")->do_action('page_title');
 		$this->html = $html->beautifyDOM($doc);
 	}
-	
+
 	public function __destruct() {
 		echo $this->html;
 	}
