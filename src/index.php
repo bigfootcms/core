@@ -329,7 +329,6 @@ class Bigfoot extends Prefab {
 	public function __destruct() {
 		echo $this->html;
 	}
-	
 }
 
 ?>
