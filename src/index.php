@@ -35,24 +35,35 @@ class Bigfoot extends Prefab {
 		base::instance()->set("directory", dirname(base::instance()->get("vpath")));
 		if ( base::instance()->get("settings.plugins_dir") ) {
 			base::instance()->set('AUTOLOAD', base::instance()->get("ROOT").base::instance()->get("settings.plugins_dir"));
-		}		
+		}
 		if ( is_null( self::$instance ) ) {
 			self::$instance = new self();
-			//base::instance()->set("HOOKS", new Hooks());
-			
 			if ( !Base::instance()->get("HOOKS") ) {
 				Base::instance()->set("HOOKS", new Hooks());
-				echo "Instansiated.";
-				exit;
 			}
-			
 		}
 		if ( $config !== NULL && file_exists($config) ) {
 			base::instance()->config($config);
+			$plugins = base::instance()->get("plugins");
+			if ( is_array($plugins) ) {
+				foreach($plugins as $name=>$loader) {
+					$loader = base::instance()->get("ROOT").$loader;
+					if ( file_exists($loader) ) {
+						chdir(dirname($loader));
+						Base::instance()->set("plugin_basename", basename(dirname($loader)));
+						include($loader);
+					}
+				}
+			}
+			chdir(base::instance()->get("ROOT"));
 		}
 		self::$instance->connect();
 		base::instance()->get("HOOKS")->do_action('CMS');
 		return self::$instance;
+	}
+	
+	public function RegisterPlugin($config) {
+		Base::instance()->get("HOOKS")->do_action('RegisterPlugin');
 	}
 	
 	public function connect() {
@@ -65,6 +76,9 @@ class Bigfoot extends Prefab {
 		} catch (PDOException $e) {
 			die('Connection failed: ' . $e->getMessage());
 		}
+		Base::instance()->get("HOOKS")->add_action('RegisterPlugin', function(){
+			
+		});
 	}
 
 	public function run() {
@@ -120,8 +134,7 @@ class Bigfoot extends Prefab {
 				}
 			} else {
 				if ( isset($this->content->content) && strlen($this->content->content) > 0 ) {
-					$this->prepared->content = $this->content->content;
-					echo "asdf";
+					$this->prepared->content = $this->content->content; // Needs testing as it might never get picked up.
 				} else {
 					echo "Error: No script available to handle this page.";
 				}
@@ -263,7 +276,7 @@ class Bigfoot extends Prefab {
 	}
 	
 	public function process_template() {
-		
+	
 		$html = new PureHTML();
 		$html->scan($this->template, "head");
 		$this->template = $html->scrub($this->template);
@@ -326,9 +339,50 @@ class Bigfoot extends Prefab {
 		$this->html = $html->beautifyDOM($doc);
 	}
 
+	/* Magic paths are convenient for hiding the real path of a file. Use only JS, CSS and SCSS assets. */
+	public function MagicAssets($fake=false, $real=false) {
+		if ( $fake !== false && $real !== false ) {
+			$_SESSION['MAGIC'][$fake] = $real;
+			return true;
+		}
+
+		if ( !empty($_SESSION['MAGIC']) ) {
+			foreach($_SESSION['MAGIC'] as $symbol=>$link) {
+				Base::instance()->route('GET|POST '.$symbol, function($f3) use ($symbol, $link) {	
+					$ext = pathinfo($link, PATHINFO_EXTENSION);
+					$filename = basename($link);
+					$directory = $f3->get("ROOT").dirname($link)."/";
+					if ( $ext == "js" ) {
+						$js =  Web::instance()->minify($filename, null, true, $directory);
+						$js = preg_replace('/(?:(?:\/\*(?:[^*]|(?:\*+[^*\/]))*\*+\/)|(?:(?<!\:|\\\|\'|\")\/\/.*))/', '', $js);
+						header("Content-type: application/x-javascript");
+						echo Template::instance()->resolve(Template::instance()->parse($js));
+						exit();
+					} elseif( $ext == "css" ) {
+						header("Content-type: text/css");
+					} else {
+						header("Content-type: text/css");
+						echo "/* SCSS currently disabled */";
+						exit;
+						$css = file_get_contents($directory.$filename);
+						$js = str_replace("{{uuid}}", $f3->get("SESSION.uuid"), $js);
+						$scss = new Compiler();
+						echo $scss->compile($css);
+						exit;
+					}
+					echo Template::instance()->resolve(Template::instance()->parse(file_get_contents($f3->get("ROOT").'/'.$link)));
+					exit;
+				});
+			}
+			return true;
+		}
+		return false;
+	}
+	
 	public function __destruct() {
 		echo $this->html;
 	}
+	
 }
 
 ?>
