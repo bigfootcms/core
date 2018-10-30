@@ -51,6 +51,7 @@ class Bigfoot extends Prefab {
 					if ( file_exists($loader) ) {
 						chdir(dirname($loader));
 						Base::instance()->set("plugin_basename", basename(dirname($loader)));
+						Base::instance()->set("plugin_path", str_replace(Base::instance()->get("ROOT"), "", dirname($loader)));
 						include($loader);
 					}
 				}
