@@ -383,6 +383,13 @@ class Bigfoot extends Prefab {
 		return false;
 	}
 	
+	public function requires_plugin($class) {
+		if ( !class_exists($class) ) {
+			return false;
+		}
+		return $class::instance();
+	}
+	
 	public function __destruct() {
 		echo $this->html;
 	}
