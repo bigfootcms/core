@@ -26,7 +26,7 @@ class Bigfoot extends Prefab {
 	public $html;
 	
 	private function __construct() {
-		//$hooks = Base::instance()->get("HOOKS");
+		// Use this to build instance?
 	}
 
 	public static function CMS($config=NULL) {
@@ -46,13 +46,18 @@ class Bigfoot extends Prefab {
 			base::instance()->config($config);
 			$plugins = base::instance()->get("plugins");
 			if ( is_array($plugins) ) {
+				
 				foreach($plugins as $name=>$loader) {
+					
+
 					$loader = base::instance()->get("ROOT").$loader;
 					if ( file_exists($loader) ) {
 						chdir(dirname($loader));
+						
 						Base::instance()->set("plugin_basename", basename(dirname($loader)));
 						Base::instance()->set("plugin_path", str_replace(Base::instance()->get("ROOT"), "", dirname($loader)));
 						Base::instance()->set('PLUGINS', dirname($loader) .'/');
+						
 						if ( file_exists(dirname($loader).'/plugin.ini') ) Base::instance()->config(dirname($loader).'/plugin.ini');
 						if ( file_exists(dirname($loader).'/plugin.class.php') ) include(dirname($loader).'/plugin.class.php');
 						if ( file_exists($loader) ) include($loader);
@@ -67,6 +72,8 @@ class Bigfoot extends Prefab {
 	}
 	
 	public function RegisterPlugin($config) {
+		
+		
 		Base::instance()->get("HOOKS")->do_action('RegisterPlugin');
 	}
 	
@@ -97,17 +104,13 @@ class Bigfoot extends Prefab {
 
 		$this->connect();
 		Base::instance()->get("HOOKS")->do_action('db_connect');
-
+		Base::instance()->get("HOOKS")->do_action('navigation', $this->getNavigationArr());
 		if ( Base::instance()->get("PATH") == Base::instance()->get("vpath") && stripos(strrev(Base::instance()->get("PATH")), 'lmth.xedni') === 0 ) {
 			header("Location: ".str_replace("index.html", "", Base::instance()->get("vpath")));
 		}
-		
 		$this->detect_device();
-
 		Base::instance()->get("HOOKS")->do_action("custom");
-
 		$this->get_content();
-				
 		$this->security = ( isset($this->content->security) )  ? json_decode($this->content->security)  : array();
 		$this->meta     = ( isset($this->content->meta_data) ) ? json_decode($this->content->meta_data) : array();
 		$this->theme    = ( isset($this->content->theme) )     ? json_decode($this->content->theme)     : array();
@@ -381,6 +384,84 @@ class Bigfoot extends Prefab {
 			return true;
 		}
 		return false;
+	}
+	
+	function pagination($total, $offset=0, $default_ipp=12) {
+		$current_page = 1;
+		if( !empty($_GET['page']) ) {
+			$current_page = filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT);
+			if ( false === $current_page ) { $current_page = 1; $method_used = "page"; }
+		}
+		if( !empty($_GET['ipp']) ) {
+			$ipp = filter_input(INPUT_GET, 'ipp', FILTER_VALIDATE_INT);
+			$ipp = ( false === $ipp ) ? $default_ipp : $ipp;
+		} else {
+			$ipp = $default_ipp;
+		}
+
+		$remaining_ipp = ((float)($total/$ipp)-(int)(float)($total/$ipp))*$ipp;
+		if( !empty($_GET['offset']) ) {
+			$offset = filter_input(INPUT_GET, 'offset', FILTER_VALIDATE_INT);
+			if ( false === $offset ) { $offset = 0; };
+		} else {
+			$offset = ($current_page - 1) * $ipp;
+		}
+		if ( $offset < 0 ) { $offset = 0; }
+		if ( $offset >= $total ) { $offset = $total - $remaining_ipp; }
+		$number_of_pages = ceil($total / $ipp);
+		$page = array();
+		for($i=0; $i<$number_of_pages; $i++) {
+			$s = $i * $ipp;
+			$l = $s + $ipp;
+			if ( $l >= $total ) { $l = $total; }
+			if ( $offset >= $s && $offset <= $l) { $current_page = $i + 1; }
+			$page_number = ( $i == 0 ) ? 1 : $i+1;
+			$pages[$i] = array("offset"=>$s, "ipp"=>$l, "page"=>$page_number);
+		}
+		if ( $current_page == 0 ) { $current_page = 1; }
+		$pages[$current_page-1]['class'] = "current";
+
+		$first_page_data = $pages[0];
+		$first_page_data['text'] = 'First '.$first_page_data['ipp'];
+
+		$max = count($pages);
+		$last_page_data = $pages[$max-1];
+		$last_page_data['remaining_ipp'] = $last_page_data['ipp'] - $last_page_data['offset'];
+		$last_page_data['text'] = 'Last ' . $last_page_data['remaining_ipp'];
+
+		$prev_page = ( $current_page > 1 ) ? $current_page - 1 : NULL;
+		$next_page =( $current_page < $number_of_pages ) ? $current_page + 1 : NULL;
+
+		$current_offset = $offset;
+		$current_limit = $ipp;
+		if ( !isset($method_used) ) { $method_used = "combo"; }
+		
+		return array("current_offset"=>$current_offset, "current_limit"=>$current_limit, "method_used"=>$method_used, "number_of_pages"=>$number_of_pages, "current_page"=>$current_page, "prev_page"=>$prev_page, "next_page"=>$next_page, "first_page"=>$first_page_data, "last_page"=>$last_page_data, "pages"=>$pages);
+	}
+	
+	public function getNavigationArr() {
+		if ( isset($this->getNavigationArr) && is_array($this->getNavigationArr) ) {
+			return $this->getNavigationArr;
+		}
+		$query = $this->dbh->prepare("SELECT `pid`,`virtual_path`, `protected`, `navPlacement`, `weight`, `page_title`, `nav_title` FROM `content` WHERE 1 ORDER BY `weight`, `virtual_path`");
+		$query->execute();
+		$this->getNavigationArr = (array) $query->fetchAll(PDO::FETCH_ASSOC);
+		return $this->getNavigationArr;
+	}
+	
+	public function getSiteMap() {
+		$index = array_map(function($v){
+			if ( Base::instance()->get("vpath") == $v['virtual_path'] ) $v['isVisiting'] = true;
+			if ( $v['pid'] == $v['virtual_path'] ) $v['isParent'] = true;
+			if ( $v['nav_title'] == "" && $v['page_title'] != "" ) $v['nav_title'] = $v['page_title'];
+			return $v;
+		}, $this->getNavigationArr());
+
+		foreach($index as $k=>$v) { $index[$v['virtual_path']] = $v; unset($index[$k]); }
+		foreach ($index as $k=>&$v) { $index[$v['pid']]['children'][$k] = &$v; if ( isset($index[$k]['children']) ) { $roots[] = $v['children']; unset($index[$k]['children']); } unset($v); }
+		foreach($roots as $v) { $sitemap[key($v)] = $v[key($v)]; }
+		unset($index, $roots, $k, $v);
+		return $sitemap;
 	}
 	
 	public function requires_plugin($class) {
