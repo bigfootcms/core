@@ -59,7 +59,7 @@ class Bigfoot extends Prefab {
 						Base::instance()->set('PLUGINS', dirname($loader) .'/');
 						
 						if ( file_exists(dirname($loader).'/plugin.ini') ) Base::instance()->config(dirname($loader).'/plugin.ini');
-						if ( file_exists(dirname($loader).'/plugin.class.php') ) include(dirname($loader).'/plugin.class.php');
+						if ( file_exists(dirname($loader).'/src/plugin.class.php') ) include(dirname($loader).'/src/plugin.class.php');
 						if ( file_exists($loader) ) include($loader);
 					}
 				}
