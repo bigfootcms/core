@@ -6,7 +6,7 @@
     "require": {
 		"php": ">=7.0.2",
         "bcosca/fatfree-core": "^3.6",
-        "commnetivity/purehtml": "^1.0.0",
+        "commnetivity/purehtml": "^1.0.6",
         "mobiledetect/mobiledetectlib": "^2.8.32",
         "bainternet/php-hooks": "^1.0.0"
     },
