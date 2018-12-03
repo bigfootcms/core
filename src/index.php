@@ -46,18 +46,13 @@ class Bigfoot extends Prefab {
 			base::instance()->config($config);
 			$plugins = base::instance()->get("plugins");
 			if ( is_array($plugins) ) {
-				
 				foreach($plugins as $name=>$loader) {
-					
-
 					$loader = base::instance()->get("ROOT").$loader;
 					if ( file_exists($loader) ) {
 						chdir(dirname($loader));
-						
 						Base::instance()->set("plugin_basename", basename(dirname($loader)));
 						Base::instance()->set("plugin_path", str_replace(Base::instance()->get("ROOT"), "", dirname($loader)));
 						Base::instance()->set('PLUGINS', dirname($loader) .'/');
-						
 						if ( file_exists(dirname($loader).'/plugin.ini') ) Base::instance()->config(dirname($loader).'/plugin.ini');
 						if ( file_exists(dirname($loader).'/src/plugin.class.php') ) include(dirname($loader).'/src/plugin.class.php');
 						if ( file_exists($loader) ) include($loader);
@@ -228,7 +223,10 @@ class Bigfoot extends Prefab {
 		} else {
 			$this->content = $query->fetchAll()[0];
 		}
+		Base::instance()->get("HOOKS")->do_action('pre_content', $this->content);
 	}
+	
+	
 	
 	public function isContentProtected() {
 		if ( $this->content->protected == "Y" ) {
