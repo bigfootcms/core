@@ -470,7 +470,7 @@ class Bigfoot extends Prefab {
 	}
 	
 	public function __destruct() {
-		echo $this->html;
+		echo Template::instance()->resolve(Template::instance()->parse($this->html));
 	}
 	
 }
