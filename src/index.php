@@ -166,9 +166,9 @@ class Bigfoot extends Prefab {
 		
 		if ( in_array(Base::instance()->get("vpath"), array_keys(Base::instance()->get("ROUTES")) )) {
 			Base::instance()->set("QUIET", false);
-			ob_start();
+			if ( session_id() ) ob_start();
 			Base::instance()->run();
-			ob_get_clean();
+			if ( session_id() ) ob_get_clean();
 			
 			if ( Base::instance()->get("RESPONSE") ) {
 				$this->prepared->status = 200;
