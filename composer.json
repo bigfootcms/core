@@ -1,5 +1,5 @@
 {
-    "name": "bigfootcms/core",
+    "name": "bigfoot/core",
     "description": "MySQL Router Plugin for Fat Free Framework",
 	"homepage": "https://bigfootcms.com/",
     "type": "f3-plugin",
@@ -15,7 +15,7 @@
         {
             "name": "Nicholas Maietta",
             "email": "nick@commnetivity.com",
-			"homepage": "http://icode4u.com",
+			"homepage": "https://maietta.org",
 			"role": "Developer"			
         }
     ],
